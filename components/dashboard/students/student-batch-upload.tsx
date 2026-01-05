@@ -11,8 +11,8 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import Papa from "papaparse";
-import bcrypt from "bcryptjs";
 import type { Stream } from "@/lib/types";
+import { normalizeAndValidateAdmissionNumber } from "@/lib/helper";
 
 interface Class {
   id: string;
@@ -107,7 +107,6 @@ export function StudentBatchUpload({
       }
 
       const password = row.password?.trim() || "password123";
-      const hashedPassword = await bcrypt.hash(password, 10);
 
       const studentData = {
         admission_number: admission,
@@ -121,11 +120,36 @@ export function StudentBatchUpload({
         guardian_phone: row.guardian_phone || null,
         address: row.address || null,
         school_id: schoolId,
-        password_hash: hashedPassword,
       };
 
-      const { error } = await supabase.from("students").insert(studentData);
-      if (error) newReport.push(`Row ${i + 2}: Failed - ${error.message}`);
+      const generatedEmail = `${normalizeAndValidateAdmissionNumber(studentData.admission_number)}@herufi.app`
+
+      const { data: authData, error: authError } =
+        await supabase.auth.signUp({
+          email: generatedEmail,
+          password: password,
+          options: {
+            data: {
+              role: "student",
+              admission_number: studentData.admission_number,
+              first_name: studentData.first_name,
+              last_name: studentData.last_name,
+              school_id: schoolId,
+              stream_id: studentData.stream_id,
+              date_of_birth: studentData.date_of_birth,
+              gender: studentData.gender,
+              guardian_name: studentData.guardian_name,
+              guardian_phone: studentData.guardian_phone,
+              address: studentData.address,
+            },
+          },
+        })
+
+
+
+      if (authError) throw authError
+      if (!authData.user) throw new Error("Auth user not created")
+      if (authError) newReport.push(`Row ${i + 2}: Failed - ${authError}`);
       else newReport.push(`Row ${i + 2}: Success`);
     }
 

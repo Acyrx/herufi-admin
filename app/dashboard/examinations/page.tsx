@@ -27,6 +27,14 @@ export default async function ExaminationsPage() {
     .order("year", { ascending: false })
     .order("start_date", { ascending: false });
 
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("school_id")
+    .eq("id", user.id)
+    .single();
+
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -49,7 +57,7 @@ export default async function ExaminationsPage() {
           <CardTitle className="text-foreground">All Examinations</CardTitle>
         </CardHeader>
         <CardContent>
-          <ExaminationsTable examinations={examinations || []} />
+          <ExaminationsTable examinations={examinations || []} schoolId={profile?.school_id} />
         </CardContent>
       </Card>
     </div>

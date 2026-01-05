@@ -10,13 +10,54 @@ CREATE TABLE IF NOT EXISTS public.schools (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+
+-- Teachers table
+CREATE TABLE IF NOT EXISTS public.teachers (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  employee_number TEXT NOT NULL,
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  phone TEXT,
+  email TEXT,
+  gender TEXT CHECK (gender IN ('male', 'female', 'other')),
+  qualification TEXT,
+  date_hired DATE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE (school_id, employee_number)
+);
+
+
+-- Students table
+CREATE TABLE IF NOT EXISTS public.students (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  stream_id UUID REFERENCES public.streams(id) ON DELETE SET NULL,
+  user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  admission_number TEXT NOT NULL,
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  date_of_birth DATE,
+  gender TEXT CHECK (gender IN ('male', 'female', 'other')),
+  guardian_name TEXT,
+  guardian_phone TEXT,
+  address TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(school_id, admission_number)
+);
+
 -- User profiles table with roles
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   school_id UUID REFERENCES public.schools(id) ON DELETE CASCADE,
+  student_id UUID  REFERENCES public.schools(id) ON DELETE CASCADE,
+  teacher_id UUID  REFERENCES public.schools(id) ON DELETE CASCADE,
   full_name TEXT,
   email TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('super_admin', 'admin', 'teacher')),
+  role TEXT NOT NULL CHECK (role IN ('super_admin', 'admin', 'teacher' , 'student')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -66,44 +107,11 @@ CREATE TABLE IF NOT EXISTS public.subjects (
   UNIQUE(school_id, name)
 );
 
--- Teachers table
-CREATE TABLE IF NOT EXISTS public.teachers (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
-  profile_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-  employee_number TEXT NOT NULL,
-  first_name TEXT NOT NULL,
-  last_name TEXT NOT NULL,
-  phone TEXT,
-  email TEXT,
-  gender TEXT CHECK (gender IN ('male', 'female', 'other')),
-  qualification TEXT,
-  date_hired DATE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE (school_id, employee_number)
-);
 
 -- Add class_teacher_id to classes after teachers table exists
 ALTER TABLE public.classes ADD COLUMN IF NOT EXISTS class_teacher_id UUID REFERENCES public.teachers(id) ON DELETE SET NULL;
 
--- Students table
-CREATE TABLE IF NOT EXISTS public.students (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
-  stream_id UUID REFERENCES public.streams(id) ON DELETE SET NULL,
-  admission_number TEXT NOT NULL,
-  first_name TEXT NOT NULL,
-  last_name TEXT NOT NULL,
-  date_of_birth DATE,
-  gender TEXT CHECK (gender IN ('male', 'female', 'other')),
-  guardian_name TEXT,
-  guardian_phone TEXT,
-  address TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(school_id, admission_number)
-);
+
 
 -- Subject Taught by Teacher
 CREATE TABLE IF NOT EXISTS public.teacher_subjects (

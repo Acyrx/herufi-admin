@@ -1,54 +1,123 @@
--- Function to automatically create profile on user signup
-CREATE OR REPLACE FUNCTION handle_new_user()
-RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION public.handle_auth_user_events()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   school_exists BOOLEAN;
   new_school_id UUID;
   user_full_name TEXT;
 BEGIN
-  -- Get full name from metadata if available
-  user_full_name := COALESCE(NEW.raw_user_meta_data ->> 'full_name', '');
-  
-  -- Check if any school already exists
-  SELECT EXISTS (SELECT 1 FROM public.schools) INTO school_exists;
+  ------------------------------------------------------------------
+  -- PART 1: HANDLE USER CREATION (AFTER INSERT)
+  ------------------------------------------------------------------
+  IF TG_OP = 'INSERT' THEN
+    user_full_name := COALESCE(NEW.raw_user_meta_data ->> 'full_name', '');
 
-  IF NOT school_exists THEN
-    -- FIRST USER EVER -> create school + super_admin
-    INSERT INTO public.schools (school_name)
-    VALUES ('My School')
-    RETURNING id INTO new_school_id;
+    -- Check if any school exists
+    SELECT EXISTS (SELECT 1 FROM public.schools) INTO school_exists;
 
-    INSERT INTO public.profiles (id, email, full_name, role, school_id)
-    VALUES (NEW.id, NEW.email, user_full_name, 'super_admin', new_school_id);
-  ELSE
-    -- Get the existing school id
-    SELECT id INTO new_school_id FROM public.schools LIMIT 1;
-    
-    -- ALL OTHER USERS -> admin with school
-    INSERT INTO public.profiles (id, email, full_name, role, school_id)
-    VALUES (NEW.id, NEW.email, user_full_name, 'admin', new_school_id);
+    IF NOT school_exists THEN
+      -- First user ever → create school + super_admin
+      INSERT INTO public.schools (school_name)
+      VALUES ('My School')
+      RETURNING id INTO new_school_id;
+
+      INSERT INTO public.profiles (id, email, full_name, role, school_id)
+      VALUES (NEW.id, NEW.email, user_full_name, 'super_admin', new_school_id);
+
+    ELSE
+      -- All other users → admin (or default role)
+      SELECT id INTO new_school_id FROM public.schools LIMIT 1;
+
+      INSERT INTO public.profiles (id, email, full_name, role, school_id)
+      VALUES (
+        NEW.id,
+        NEW.email,
+        user_full_name,
+        COALESCE(NEW.raw_user_meta_data->>'role', 'admin'),
+        new_school_id
+      );
+    END IF;
+  END IF;
+
+  ------------------------------------------------------------------
+  -- PART 2: HANDLE USER CONFIRMATION (AFTER UPDATE)
+  ------------------------------------------------------------------
+  IF TG_OP = 'UPDATE'
+     AND NEW.confirmed_at IS NOT NULL
+     AND OLD.confirmed_at IS NULL THEN
+
+    ----------------------------------------------------------------
+    -- TEACHER
+    ----------------------------------------------------------------
+    IF NEW.raw_user_meta_data->>'role' = 'teacher' THEN
+      INSERT INTO public.teachers (
+        user_id,
+        school_id,
+        first_name,
+        last_name,
+        email,
+        subject,
+        phone
+      )
+      VALUES (
+        NEW.id,
+        (NEW.raw_user_meta_data->>'school_id')::uuid,
+        COALESCE(NEW.raw_user_meta_data->>'first_name', 'New'),
+        COALESCE(NEW.raw_user_meta_data->>'last_name', 'Teacher'),
+        NEW.email,
+        COALESCE(NEW.raw_user_meta_data->>'subject', ''),
+        COALESCE(NEW.raw_user_meta_data->>'phone', '')
+      )
+      ON CONFLICT (user_id) DO NOTHING;
+    END IF;
+
+    ----------------------------------------------------------------
+    -- STUDENT
+    ----------------------------------------------------------------
+    IF NEW.raw_user_meta_data->>'role' = 'student' THEN
+      INSERT INTO public.students (
+        user_id,
+        school_id,
+        first_name,
+        last_name,
+        email,
+        grade,
+        phone,
+        date_of_birth,
+        parent_name,
+        parent_phone
+      )
+      VALUES (
+        NEW.id,
+        (NEW.raw_user_meta_data->>'school_id')::uuid,
+        COALESCE(NEW.raw_user_meta_data->>'first_name', 'New'),
+        COALESCE(NEW.raw_user_meta_data->>'last_name', 'Student'),
+        NEW.email,
+        COALESCE(NEW.raw_user_meta_data->>'grade', ''),
+        COALESCE(NEW.raw_user_meta_data->>'phone', ''),
+        (NEW.raw_user_meta_data->>'date_of_birth')::date,
+        COALESCE(NEW.raw_user_meta_data->>'parent_name', ''),
+        COALESCE(NEW.raw_user_meta_data->>'parent_phone', '')
+      )
+      ON CONFLICT (user_id) DO NOTHING;
+    END IF;
+
   END IF;
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
--- Trigger to create profile on signup
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 
-CREATE TRIGGER on_auth_user_created
-AFTER INSERT ON auth.users
+DROP TRIGGER IF EXISTS on_auth_user_events ON auth.users;
+
+CREATE TRIGGER on_auth_user_events
+AFTER INSERT OR UPDATE ON auth.users
 FOR EACH ROW
-EXECUTE FUNCTION handle_new_user();
-
--- Function to update updated_at timestamp
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+EXECUTE FUNCTION public.handle_auth_user_events();
 
 -- Add updated_at triggers to all tables
 CREATE TRIGGER update_schools_updated_at BEFORE UPDATE ON public.schools FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

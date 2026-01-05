@@ -1,59 +1,103 @@
-import type { Profile, School } from "@/lib/types";
-import { Bell, Search } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+"use client"
+
+import type { Profile, School } from "@/lib/types"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { usePathname } from "next/navigation"
 
 interface DashboardHeaderProps {
-  profile: Profile | null;
-  school: School | null;
+  profile?: Profile | null
+  student?: Profile | null
+  teacher?: Profile | null
+  school?: School | null
 }
 
-export function DashboardHeader({ profile, school }: DashboardHeaderProps) {
-  const initials = profile?.full_name
-    ? profile.full_name
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase()
-    : profile?.email?.[0]?.toUpperCase() || "U";
+export function DashboardHeader({
+  profile,
+  student,
+  teacher,
+  school,
+}: DashboardHeaderProps) {
+  const pathname = usePathname()
+
+  // 🔹 Resolve role
+  const role: "student" | "teacher" | "admin" = (() => {
+    if (pathname.startsWith("/student-dashboard")) return "student"
+    if (pathname.startsWith("/teacher-dashboard")) return "teacher"
+    return "admin"
+  })()
+
+  // 🔹 Pick active user object
+  const activeUser: Profile | null =
+    role === "student" ? student :
+      role === "teacher" ? teacher :
+        profile
+
+  // 🔹 Resolve display name
+  const displayName = (() => {
+    if (!activeUser) return "User"
+
+    // Admin
+    if (role === "admin" && activeUser.full_name) {
+      return activeUser.full_name
+    }
+
+    // Teacher / Student
+    if (activeUser.first_name || activeUser.last_name) {
+      return [activeUser.first_name, activeUser.last_name]
+        .filter(Boolean)
+        .join(" ")
+    }
+
+    // Student fallback
+    // if (role === "student" && activeUser.admission_number) {
+    //   return activeUser.admission_number.toUpperCase()
+    // }
+
+    // // Email fallback
+    // if (activeUser.email) {
+    //   return activeUser.email.split("@")[0]
+    // }
+
+    return "User"
+  })()
+
+  // 🔹 Initials
+  const initials =
+    displayName
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "U"
 
   return (
     <header className="h-16 border-b border-border bg-card px-6 flex items-center justify-between">
       <div className="flex items-center gap-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search..."
-            className="w-64 pl-9 bg-secondary border-input"
-          />
-        </div>
-      </div>
-
-      <div className="flex items-center gap-4">
         <span className="text-sm text-muted-foreground">
           {school?.school_name || "My School"}
         </span>
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5 text-muted-foreground" />
-          <span className="absolute top-1 right-1 h-2 w-2 bg-primary rounded-full" />
-        </Button>
+      </div>
+
+      <div className="flex items-center gap-4">
+
+        {/* User */}
         <div className="flex items-center gap-3">
           <Avatar className="h-9 w-9">
             <AvatarFallback className="bg-primary text-primary-foreground text-sm">
               {initials}
             </AvatarFallback>
           </Avatar>
+
           <div className="hidden md:block">
             <p className="text-sm font-medium text-foreground">
-              {profile?.full_name || "User"}
+              {displayName}
             </p>
             <p className="text-xs text-muted-foreground capitalize">
-              {profile?.role?.replace("_", " ") || "Admin"}
+              {role}
             </p>
           </div>
         </div>
       </div>
     </header>
-  );
+  )
 }

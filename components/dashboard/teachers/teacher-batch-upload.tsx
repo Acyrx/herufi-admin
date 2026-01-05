@@ -7,6 +7,7 @@ import { z } from "zod";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client"; // make sure you import your supabase client
 
 const teacherSchema = z.object({
   employee_number: z.string().min(1),
@@ -17,15 +18,17 @@ const teacherSchema = z.object({
   gender: z.enum(["male", "female", "other"]).optional(),
   qualification: z.string().optional(),
   date_hired: z.string().optional(),
+  password: z.string().min(6),
 });
 
 export function TeacherBatchUpload() {
+  const supabase = createClient();
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<any>(null);
   const router = useRouter();
 
   const parseFile = async (file: File) => {
-    const ext = file.name.split(".").pop();
+    const ext = file.name.split(".").pop()?.toLowerCase();
 
     if (ext === "csv") {
       return new Promise<any[]>((resolve, reject) => {
@@ -50,45 +53,77 @@ export function TeacherBatchUpload() {
 
   const handleUpload = async (file: File) => {
     setLoading(true);
+    const successRows: any[] = [];
+    const errorRows: any[] = [];
 
     try {
       const rows = await parseFile(file);
 
-      const validRows = [];
-      const errors: any[] = [];
-
-      rows.forEach((row, index) => {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
         const result = teacherSchema.safeParse(row);
-        if (!result.success) {
-          errors.push({ row: index + 1, errors: result.error.flatten() });
-        } else {
-          validRows.push(result.data);
-        }
-      });
 
-      if (errors.length) {
-        console.error(errors);
-        toast.error(`${errors.length} rows failed validation`);
-        setLoading(false);
-        return;
+        if (!result.success) {
+          errorRows.push({
+            row: i + 1,
+            employee_number: row.employee_number || "",
+            message: Object.values(result.error.flatten().fieldErrors)
+              .flat()
+              .join(", "),
+          });
+        } else {
+          const teacher = result.data;
+          const password = teacher.password?.trim() || "password123";
+          try {
+            const { data: authData, error: authError } = await supabase.auth.signUp({
+              email: teacher.email || `${teacher.employee_number}@herufi.app`,
+              password, // replace with a proper password or generate one
+              options: {
+                emailRedirectTo:
+                  process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ||
+                  `${window.location.origin}/teacher-dashboard`,
+                data: {
+                  role: "teacher",
+                  first_name: teacher.first_name,
+                  last_name: teacher.last_name,
+                  phone: teacher.phone || "",
+                  employee_number: teacher.employee_number,
+                  email: teacher.email || "",
+                  gender: teacher.gender || "",
+                  qualification: teacher.qualification || "",
+                  date_hired: teacher.date_hired || "",
+                },
+              },
+            });
+
+            if (authError) throw authError;
+            if (!authData.user) throw new Error("Failed to create user account");
+
+            successRows.push(teacher);
+          } catch (err: any) {
+            errorRows.push({
+              row: i + 1,
+              employee_number: teacher.employee_number,
+              message: err.message || "Failed to create account",
+            });
+          }
+        }
       }
 
-      const res = await fetch("/api/teachers/batch", {
-        method: "POST",
-        body: JSON.stringify(validRows),
+      setReport({
+        successCount: successRows.length,
+        errorCount: errorRows.length,
+        errors: errorRows,
       });
 
-      const data = await res.json();
-
-      setReport(data);
-
-      if (data.errorCount === 0) {
-        toast.success(`${data.successCount} teachers uploaded successfully`);
+      if (errorRows.length === 0) {
+        toast.success(`${successRows.length} teachers uploaded successfully`);
       } else {
         toast.warning(
-          `${data.successCount} uploaded, ${data.errorCount} failed`
+          `${successRows.length} uploaded, ${errorRows.length} failed`
         );
       }
+
       router.push("/dashboard/teachers");
       router.refresh();
     } catch (err: any) {

@@ -108,6 +108,16 @@ export function ClassesTable({ classes }: ClassesTableProps) {
 
             <DropdownMenuItem asChild>
               <Link
+                href={`/dashboard/classes/assign-subjects?classId=${cls.id}`}
+                className="flex items-center"
+              >
+                <Layers className="h-4 w-4 mr-2" />
+                Assign Subjects
+              </Link>
+            </DropdownMenuItem>
+
+            <DropdownMenuItem asChild>
+              <Link
                 href={`/dashboard/classes/${cls.id}/edit`}
                 className="flex items-center"
               >

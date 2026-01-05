@@ -18,6 +18,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { Student, Stream, Class } from "@/lib/types";
 import bcrypt from "bcryptjs";
+import { normalizeAndValidateAdmissionNumber } from "@/lib/helper";
 
 interface StreamWithClass extends Stream {
   class?: Class | null;
@@ -117,11 +118,6 @@ export function StudentForm({ student, streams }: StudentFormProps) {
       return;
     }
 
-    let password_hash: string | null = null;
-
-    if (!student && formData.password) {
-      password_hash = await bcrypt.hash(formData.password, 10);
-    }
 
     const {
       data: { user },
@@ -133,39 +129,73 @@ export function StudentForm({ student, streams }: StudentFormProps) {
       return;
     }
 
+
+    const { data: student } = await supabase
+      .from("students")
+      .select("*")
+      .eq("admission_number", formData.admission_number)
+      .single();
+
     const { data: profile } = await supabase
       .from("profiles")
-      .select("school_id")
+      .select("*")
       .eq("id", user.id)
       .single();
 
+    console.log(profile.id)
     const studentData = {
       admission_number: formData.admission_number,
       first_name: formData.first_name,
       last_name: formData.last_name,
-      school_id: profile!.school_id,
-      stream_id: formData.stream_id || null,
+      school_id: profile.school_id,
+      stream_id: formData.stream_id,
       date_of_birth: formData.date_of_birth || null,
-      gender: formData.gender || null,
+      gender: formData.gender,
       guardian_name: formData.guardian_name || null,
       guardian_phone: formData.guardian_phone || null,
       address: formData.address || null,
-      password: password_hash, // 👈 store hashed password
     };
+
+    const generatedEmail = `${normalizeAndValidateAdmissionNumber(formData.admission_number)}@herufi.app`
+
 
     try {
       if (student) {
         const { error: updateError } = await supabase
           .from("students")
-          .update(studentData)
+          .update(studentData,)
           .eq("id", student.id);
         if (updateError) throw updateError;
+
       } else {
-        const { error: insertError } = await supabase
-          .from("students")
-          .insert(studentData);
-        if (insertError) throw insertError;
+
+        const { data: authData, error: authError } =
+          await supabase.auth.signUp({
+            email: generatedEmail,
+            password: formData.password,
+            options: {
+              data: {
+                role: "student",
+                admission_number: formData.admission_number,
+                first_name: formData.first_name,
+                last_name: formData.last_name,
+                school_id: profile.school_id,
+                stream_id: formData.stream_id,
+                date_of_birth: formData.date_of_birth,
+                gender: formData.gender,
+                guardian_name: formData.guardian_name,
+                guardian_phone: formData.guardian_phone,
+                address: formData.address,
+              },
+            },
+          })
+
+
+
+        if (authError) throw authError
+        if (!authData.user) throw new Error("Auth user not created")
       }
+
 
       router.push("/dashboard/students");
       router.refresh();
@@ -427,3 +457,5 @@ export function StudentForm({ student, streams }: StudentFormProps) {
     </form>
   );
 }
+
+

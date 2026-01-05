@@ -1,8 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StudentForm } from "@/components/dashboard/students/student-form";
 import { StudentBatchUpload } from "@/components/dashboard/students/student-batch-upload";
+import { StudentForm } from "@/components/dashboard/students/student-form";
 
 export default async function NewStudentPage() {
   const supabase = await createClient();
@@ -53,6 +53,7 @@ export default async function NewStudentPage() {
           <StudentBatchUpload streams={streams || []} />
         </CardContent>
       </Card>
+
     </div>
   );
 }

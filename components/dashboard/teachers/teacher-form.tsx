@@ -35,6 +35,7 @@ export function TeacherForm({ teacher }: TeacherFormProps) {
     gender: teacher?.gender || "",
     qualification: teacher?.qualification || "",
     date_hired: teacher?.date_hired || "",
+    password: ""
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -73,6 +74,7 @@ export function TeacherForm({ teacher }: TeacherFormProps) {
       gender: formData.gender || null,
       qualification: formData.qualification || null,
       date_hired: formData.date_hired || null,
+      password: formData.password
     };
 
     try {
@@ -83,10 +85,33 @@ export function TeacherForm({ teacher }: TeacherFormProps) {
           .eq("id", teacher.id);
         if (updateError) throw updateError;
       } else {
-        const { error: insertError } = await supabase
-          .from("teachers")
-          .insert(teacherData);
-        if (insertError) throw insertError;
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: formData.email,
+          password: formData.password,
+          options: {
+            emailRedirectTo:
+              process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/teacher-dashboard`,
+            data: {
+              role: "teacher",
+              first_name: formData.first_name,
+              last_name: formData.last_name,
+              school_id: profile.school_id,
+              phone: formData.phone,
+              employee_number: formData.employee_number || "",
+              email: formData.email,
+              gender: formData.gender || "",
+              qualification: formData.qualification || "",
+              date_hired: formData.date_hired || "",
+              password: ""
+            },
+          },
+        })
+
+        if (authError) throw authError
+
+        if (!authData.user) {
+          throw new Error("Failed to create user account")
+        }
       }
 
       router.push("/dashboard/teachers");
@@ -231,6 +256,24 @@ export function TeacherForm({ teacher }: TeacherFormProps) {
             className="bg-secondary border-input"
           />
         </div>
+        {!teacher && (
+          <div className="space-y-2">
+            <Label htmlFor="password" className="text-foreground">
+              Student Password *
+            </Label>
+            <Input
+              id="password"
+              type="password"
+              value={formData.password}
+              onChange={(e) =>
+                setFormData({ ...formData, password: e.target.value })
+              }
+              required
+              className="bg-secondary border-input"
+            />
+          </div>
+        )}
+
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}

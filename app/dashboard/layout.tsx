@@ -15,6 +15,7 @@ export default async function DashboardLayout({
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
   if (!user) {
     redirect("/auth/login");
   }
@@ -34,6 +35,13 @@ export default async function DashboardLayout({
       .eq("id", profile.school_id)
       .single();
     school = schoolData;
+  }
+
+  // Only allow super_admin or admin
+  if (profile?.role !== "super_admin" && profile?.role !== "admin") {
+    // Logout the user
+    await supabase.auth.signOut();
+    redirect("/auth/login");
   }
 
   return (
