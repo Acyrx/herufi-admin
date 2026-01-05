@@ -419,7 +419,7 @@ export default function LoginPage() {
                   <Button variant="outline" className="h-11" asChild>
                     <Link href="/auth/teacher-signup">
                       <User className="mr-2 h-4 w-4" />
-                      Join as Teacher
+                      Join Herufi
                     </Link>
                   </Button>
                 </div>

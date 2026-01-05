@@ -5,45 +5,64 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  school_exists BOOLEAN;
-  new_school_id UUID;
+  user_role TEXT;
   user_full_name TEXT;
+  new_school_id UUID;
 BEGIN
   ------------------------------------------------------------------
-  -- PART 1: HANDLE USER CREATION (AFTER INSERT)
+  -- PART 1: USER CREATED (AFTER INSERT)
   ------------------------------------------------------------------
   IF TG_OP = 'INSERT' THEN
-    user_full_name := COALESCE(NEW.raw_user_meta_data ->> 'full_name', '');
+    user_role := NEW.raw_user_meta_data->>'role';
+    user_full_name := COALESCE(NEW.raw_user_meta_data->>'full_name', '');
 
-    -- Check if any school exists
-    SELECT EXISTS (SELECT 1 FROM public.schools) INTO school_exists;
-
-    IF NOT school_exists THEN
-      -- First user ever → create school + super_admin
-      INSERT INTO public.schools (school_name)
-      VALUES ('My School')
-      RETURNING id INTO new_school_id;
-
-      INSERT INTO public.profiles (id, email, full_name, role, school_id)
-      VALUES (NEW.id, NEW.email, user_full_name, 'super_admin', new_school_id);
-
-    ELSE
-      -- All other users → admin (or default role)
-      SELECT id INTO new_school_id FROM public.schools LIMIT 1;
-
-      INSERT INTO public.profiles (id, email, full_name, role, school_id)
-      VALUES (
-        NEW.id,
-        NEW.email,
-        user_full_name,
-        COALESCE(NEW.raw_user_meta_data->>'role', 'admin'),
-        new_school_id
-      );
+    -- Validate role early
+    IF user_role NOT IN ('super_admin', 'admin', 'teacher', 'student') THEN
+      RAISE EXCEPTION 'Invalid role provided';
     END IF;
+
+    ----------------------------------------------------------------
+    -- SUPER ADMIN → CREATE SCHOOL
+    ----------------------------------------------------------------
+    IF user_role = 'super_admin' THEN
+      INSERT INTO public.schools (school_name)
+      VALUES (
+        COALESCE(
+          NEW.raw_user_meta_data->>'school_name',
+          'My School'
+        )
+      )
+      RETURNING id INTO new_school_id;
+    ELSE
+      -- Other roles MUST supply school_id
+      new_school_id := (NEW.raw_user_meta_data->>'school_id')::uuid;
+      IF new_school_id IS NULL THEN
+        RAISE EXCEPTION 'school_id is required for role %', user_role;
+      END IF;
+    END IF;
+
+    ----------------------------------------------------------------
+    -- CREATE PROFILE (IDEMPOTENT)
+    ----------------------------------------------------------------
+    INSERT INTO public.profiles (
+      id,
+      email,
+      full_name,
+      role,
+      school_id
+    )
+    VALUES (
+      NEW.id,
+      NEW.email,
+      user_full_name,
+      user_role,
+      new_school_id
+    )
+    ON CONFLICT (id) DO NOTHING;
   END IF;
 
   ------------------------------------------------------------------
-  -- PART 2: HANDLE USER CONFIRMATION (AFTER UPDATE)
+  -- PART 2: USER CONFIRMED (AFTER UPDATE)
   ------------------------------------------------------------------
   IF TG_OP = 'UPDATE'
      AND NEW.confirmed_at IS NOT NULL
@@ -56,20 +75,26 @@ BEGIN
       INSERT INTO public.teachers (
         user_id,
         school_id,
+        employee_number,
         first_name,
         last_name,
+        phone,
         email,
-        subject,
-        phone
+        gender,
+        qualification,
+        date_hired
       )
       VALUES (
         NEW.id,
         (NEW.raw_user_meta_data->>'school_id')::uuid,
+        NEW.raw_user_meta_data->>'employee_number',
         COALESCE(NEW.raw_user_meta_data->>'first_name', 'New'),
         COALESCE(NEW.raw_user_meta_data->>'last_name', 'Teacher'),
+        NEW.raw_user_meta_data->>'phone',
         NEW.email,
-        COALESCE(NEW.raw_user_meta_data->>'subject', ''),
-        COALESCE(NEW.raw_user_meta_data->>'phone', '')
+        NEW.raw_user_meta_data->>'gender',
+        NEW.raw_user_meta_data->>'qualification',
+        (NEW.raw_user_meta_data->>'date_hired')::date
       )
       ON CONFLICT (user_id) DO NOTHING;
     END IF;
@@ -81,26 +106,28 @@ BEGIN
       INSERT INTO public.students (
         user_id,
         school_id,
+        stream_id,
+        admission_number,
         first_name,
         last_name,
-        email,
-        grade,
-        phone,
         date_of_birth,
-        parent_name,
-        parent_phone
+        gender,
+        guardian_name,
+        guardian_phone,
+        address
       )
       VALUES (
         NEW.id,
         (NEW.raw_user_meta_data->>'school_id')::uuid,
+        (NEW.raw_user_meta_data->>'stream_id')::uuid,
+        NEW.raw_user_meta_data->>'admission_number',
         COALESCE(NEW.raw_user_meta_data->>'first_name', 'New'),
         COALESCE(NEW.raw_user_meta_data->>'last_name', 'Student'),
-        NEW.email,
-        COALESCE(NEW.raw_user_meta_data->>'grade', ''),
-        COALESCE(NEW.raw_user_meta_data->>'phone', ''),
         (NEW.raw_user_meta_data->>'date_of_birth')::date,
-        COALESCE(NEW.raw_user_meta_data->>'parent_name', ''),
-        COALESCE(NEW.raw_user_meta_data->>'parent_phone', '')
+        NEW.raw_user_meta_data->>'gender',
+        NEW.raw_user_meta_data->>'guardian_name',
+        NEW.raw_user_meta_data->>'guardian_phone',
+        NEW.raw_user_meta_data->>'address'
       )
       ON CONFLICT (user_id) DO NOTHING;
     END IF;
@@ -110,6 +137,7 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
 
 
 DROP TRIGGER IF EXISTS on_auth_user_events ON auth.users;
