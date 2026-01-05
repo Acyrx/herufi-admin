@@ -39,7 +39,7 @@ export default async function StudentDashboardPage() {
         )
       )
     `)
-    .eq("user_id", user.id)
+    .eq("user_id", user?.id)
     .single()
 
   if (!student) {
